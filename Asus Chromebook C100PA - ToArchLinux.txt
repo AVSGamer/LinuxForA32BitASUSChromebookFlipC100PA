@@ -1,0 +1,833 @@
+[Asus Chromebook C100PA - Installation of Arch Linux ARM on this 32-Bit ARM Based System from 10 Years ago.]
+
+Tried using altreact's archbk GitHub repository script but apparently that was for an old deprecated kernel(2017) version.
+
+[Returning to my previously tested method of Official Arch Linux Instructions]
+
+Switch to developer mode
+Turn off the laptop.
+To invoke Recovery mode, you hold down the ESC and Refresh keys and poke the Power button.
+At the Recovery screen press Ctrl-D (there's no prompt - you have to know to do it).
+Confirm switching to developer mode by pressing enter, and the laptop will reboot and reset the system. This takes about 15-20 minutes.
+Note: After enabling developer mode, you will need to press Ctrl-D each time you boot, or wait 30 seconds to continue booting.
+
+Enable booting from external storage
+After booting into developer mode, hold Ctrl and Alt and poke the T key. This will open up the crosh shell.
+Type shell to get into a bash shell.
+Type sudo su to become root.
+
+Type the following to enable booting into unsigned USB OSes:
+crossystem dev_boot_usb=1 dev_boot_signed_only=0
+
+Reboot the system to allow the change to take effect.
+
+Create a root USB or SD for dual booting(Official Arch Instructions-Based):
+These instructions are written for installing to a USB drive with the sda device, assuming no other USB drives are plugged in. For an SD card, click here to magically adjust the instructions for the mmcblk1 device that an SD card will register as.
+Get a root shell as described in the previous section.(sudo su)
+Since ChromeOS will automatically mount any partitions it finds, unmount everything now:
+umount /dev/sda*
+Start fdisk to create a GPT partition table:
+fdisk /dev/sda
+At the fdisk prompt:
+Type g. This will create a new empty GPT partition table.
+Exit by typing 'w' key.
+Partition the microSD card or USB Drive:
+cgpt create /dev/sda
+cgpt add -i 1 -t kernel -b 8192 -s 32768 -l Kernel -S 1 -T 5 -P 10 /dev/sda
+To create the rootfs partition, we first need to calculate how big to make the partition using information from 'cgpt show'. Look for the number under the start column for Sec GPT table which is 15633375 in this example:
+localhost / # cgpt show /dev/sda
+       start        size    part  contents
+           0           1          PMBR
+           1           1          Pri GPT header
+        8192       32768      1   Label: "Kernel"
+                                  Type: ChromeOS kernel
+                                  UUID: E3DA8325-83E1-2C43-BA9D-8B29EFFA5BC4
+                                  Attr: priority=10 tries=5 successful=1
+
+    15633375          32          Sec GPT table
+    15633407           1          Sec GPT header
+Replace the xxxxx(15728607) string in the following command with that number to create the root partition:
+cgpt add -i 2 -t data -b 40960 -s `expr xxxxx - 40960` -l Root /dev/sda
+Tell the system to refresh what it knows about the disk partitions:
+partx -a /dev/sda
+Format the root partition:
+mkfs.ext4 /dev/sda2
+Download and extract rootfs tarball:
+cd /tmp
+curl -LO http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-chromebook-latest.tar.gz
+mkdir root
+mount /dev/sda2 root
+tar -xf ArchLinuxARM-armv7-chromebook-latest.tar.gz -C root
+Flash the kernel to the kernel partition:
+dd if=root/boot/vmlinux.kpart of=/dev/sda1
+Unmount the root partition:
+umount root
+sync
+Reboot the computer.
+At the splash screen, instead of pressing Ctrl-D to go to ChromeOS, press Ctrl-U to boot to the external drive.
+After logging in as root (password is "root")
+Connect to the Internet via USB Tethering from a Cellphone...
+Initialize the pacman keyring and populate the Arch Linux ARM package signing keys:
+pacman-key --init
+pacman-key --populate archlinuxarm
+
+Install the firmware-veyron package, or copy it to the drive for later installation for wifi support.
+pacman -S firmware-veyron
+reboot to have wifi-menu work by typing "wifi-menu"
+
+[Once Connected To WiFi Set That WiFi With These To Auto Connect On Boot]
+sudo pacman -S iwd
+sudo systemctl enable --now iwd.service
+device list
+station wlan0 scan
+station wlan0 get-networks
+station wlan0 connect YOUR_WIFI_NAME
+input your network's password
+exit
+Then later on with a GUI/Desktop:
+sudo nano /etc/iwd/main.conf
+
+[WHAT TO PUT IN THAT main.conf START]
+[General]
+EnableNetworkConfiguration=true
+NameResolvingService=systemd
+
+[Network]
+EnableIPv6=true
+[WHAT TO PUT IN THAT main.conf END]
+Ctrl+O to then Enter to save then Ctrl+X to exit.
+
+Back in the Bash/Terminal:
+sudo systemctl disable --now dhcpcd
+sudo systemctl disable --now netctl
+sudo systemctl enable --now iwd.service
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+
+[ForCleaningRepoListsToPullUpdatesFrom]
+pacman -Syu
+pacman -Scc
+pacman -Syyu
+pacman -Syu
+
+[SlowUpdateScript]
+
+[If There Are "Could Not Remove Errors" From Sudden Shutdowns During Download/Update]
+sudo rm -rf /var/cache/pacman/pkg/download-*
+Then sudo pacman -Scc
+
+[Remove Orphaned/Remnant Packages]
+sudo pacman -Rns $(pacman -Qtdq)
+
+[GUI & DisplayManager]
+pacman -S xorg-server xorg-xinit lxde
+pacman -S lightdm lightdm-gtk-greeter
+systemctl enable lightdm
+
+[GivingSudoToAlarmUser]
+pacman -S sudo
+usermod -aG wheel alarm
+nano visudo <- nano is a command to open the file in a text editor.
+# %wheel ALL=(ALL:ALL) ALL <- uncomment(remove the '#') and save via Ctrl+O then Enter then Ctrl+X to exit.
+reboot (if rebooting into a CLI[Command Line Interface] connect to Wi-Fi via wifi-menu)
+alarm user's password is alarm while root's password is root.
+
+[Fixing System Locale]
+ctrl+alt+F2(2nd to the right of esc or escape key) to go back to terminal(TTY) and fix locale settings not set before.
+sed -i '/en_US.UTF-8 UTF-8/s/^# //g' /etc/locale.gen
+locale-gen
+echo "LANG=en_US.UTF-8" | tee /etc/locale.conf
+echo "export LANG=en_US.UTF-8" >> ~/.bashrc
+localectl set-locale LANG=en_US.UTF-8
+
+To avoid getting trapped if lxterminal continues to struggle, install xterm (the simple, bulletproof backup terminal) and dbus (the background system tool needed for desktop apps to communicate):
+pacman -Syu xterm dbus
+systemctl enable --now dbus
+
+Another Terminal replacement for xlterminal:
+sudo pacman -S sakura
+
+nano ~/.config/openbox/lxde-rc.xml <- this is where you can reconfigure your keyboard shortcuts on the local account. Note the '~' which means this account's home directory or path, this is important because the entire system's default configuration files are stored somewhere else where if the local user configurations are failing to load would fallback to those instead. For openbox in LXDE environment the location and file for the global config to be applied to all coming new users and as a fallback when local config is deleted is /etc/xdg/openbox/LXDE/rc.xml -> when a new account is loaded or when the local config is deleted, the system copies this file into your ~/.config/openbox/ and names it as 'lxde-rc.xml'.
+
+[Locate or Add the Terminal Keyboard Shortcut in Aforementioned Openbox Config]
+Press Ctrl + W inside the Nano editor to open the search bar.
+Type 'C-A-t' (which stands for Ctrl + Alt + T in Openbox code) and hit Enter.
+Look at the text block. It should look like this. If the entry is missing, edit or add it to look exactly like this:
+<keybind key="C-A-t">
+  <action name="Execute">
+    <command>sakura</command>
+  </action>
+</keybind>
+How to save in Nano: Press Ctrl + O, hit Enter, and then press Ctrl + X to exit. I won't repeat this at this point.
+Force the System to Reload the Shortcuts:
+openbox --reconfigure
+
+sudo pacman -Rns lxterminal <- does this even work since it's apparently a default..
+lxpanelctl restart <- no idea why inserted this here as we haven't changed much in the lxpanel yet.
+
+[Optional Disabling of Touchscreen capability if it is unwanted or disruptive due to damage]
+nano /etc/X11/xorg.conf.d/99-disable-touchscreen.conf <- nano creates the file if it doesn't exist.
+[WHAT TO PUT IN THAT 99-disable-touchscreen.conf START]
+Section "InputClass"
+    Identifier "Disable Chromebook Minnie Touchscreen"
+    MatchIsTouchscreen "on"
+    Option "Ignore" "on"
+EndSection
+[WHAT TO PUT IN THAT 99-disable-touchscreen.conf END]
+Save then exit to go back to the Terminal:
+systemctl restart lightdm
+Additional for removing Touchscreen Capability:
+sudo nano /etc/modprobe.d/blacklist.conf
+[WHAT TO PUT IN THAT blacklist.conf START]
+blacklist elants_i2c
+[WHAT TO PUT IN THAT blacklist.conf END]
+Save then exit.
+Back in bash/shell, type these:
+sudo mkinitcpio -P <- to rebuild ARM Kernel which we might have todo again once transferred internally since it doesn't seem to work from a dual boot setup, concerning the main kernel of the device.
+sudo systemctl reset-failed systemd-udevd
+sudo udevadm control --reload
+sudo reboot <- this will restart the whole OS.
+Once back in the Desktop after logging into alarm, Ctrl+Alt+T to open Sakura terminal again and type this:
+nano /etc/udev/rules.d/00-block-elan.rules
+[WHAT TO PUT IN THAT 00-block-elan.rules START]
+# Block Elan I2C Touchscreen
+SUBSYSTEM=="i2c", ENV{MODALIAS}=="i2c:elants*", OPTIONS="ignore_device"
+[WHAT TO PUT IN THAT 00-block-elan.rules END]
+
+[Setting Up System Clock to Automatically Sync and Update over the Internet]
+Because your Veyron Chromebook does not feature a traditional computer motherboard battery (RTC), its internal hardware time drifts wildly when powered down. You must map your timezone and activate the lightweight systemd-timesyncd network clock daemon.
+sudo ln -sf /usr/share/zoneinfo/Asia/Manila /etc/localtime
+sudo timedatectl set-ntp true
+sudo systemctl enable --now systemd-timesyncd
+sudo hwclock --systohc <- use this if the clock doesn't update automatically for some reason.
+
+[Icon Pack] # Will have to check if I even still have this...
+From GUI mode, go back to terminal mode using ctrl+alt+F2 then fix the desktop icon pack..
+pacman -Syu papirus-icon-theme
+go back to the GUI mode then run lxappearance via ctrl+F2 and use the papyrus theme.
+pacman -Syu network-manager-applet acpi lxpanel
+pacman -S libwnck3
+systemctl restart lightdm
+Now customize your Taskbar. Might want to remove that glitchy looking Desktop Pager from the Panel Items
+
+[From hereon out, we will customize the desktop panels(lxpanel), keyboard shortcuts(Openbox) and our custom scripts on the global/system-wide level so that it automatically gets applied to every new user account created]
+
+[Below is for Configuring XLPanel Globally for Future other users... The other Method is symbolic links..]
+sudo cp ~/.config/lxpanel/LXDE/panels/panel /etc/xdg/lxpanel/LXDE/panels/panel <- copying an account's config to global default-fallback.
+sudo rm -rf /root/.config/lxpanel <- if deleting root's config
+sudo rm -rf /home/alarm/.config/lxpanel <- if deleting alarm's config
+If you those 'rm' commands above, the next time that user logs in, it will find that it has no config so it will instead pull the defaults from the /etc/xdg/lxpanel/LXDE/panels/panel
+
+[For Logging Inputs to be used in Openbox Config]
+sudo pacman -S xorg-xev
+xev -event keyboard <- start the input listener UI
+
+Openbox Config File Fallback(Global):
+nano ~/.config/openbox/lxde-rc.xml <- edit your local alarm account keyboard bindings
+[WHAT TO PUT IN lxde-rc.xml START] # Some of these won't work right away as we need to set them up first
+# Look for the <keyboard> section and have these there:
+<keyboard>
+    <chainQuitKey>C-g</chainQuitKey>
+    <!-- Keybinds for Volume Control       -->
+    <keybind key="F8"> # F8, F9 and F10 are your Mute, DecreaseVol, and IncVolume on the Keyboard.
+	<action name="Execute">
+		<command>/usr/local/bin/vol_change.sh toggle</command>
+	</action>
+    </keybind>
+    <keybind key="F9">
+	<action name="Execute">
+		<command>/usr/local/bin/vol_change.sh 5%-</command>
+	</action>
+    </keybind>
+    <keybind key="F10">
+	<action name="Execute">
+		<command>/usr/local/bin/vol_change.sh 5%+</command>
+	</action>
+    </keybind>
+    <keybind key="XF86AudioLowerVolume"> # These are the Side Volume Buttons near your Power/On/Off Button.
+	<action name="Execute">
+		<command>/usr/local/bin/vol_change.sh 5%-</command>
+	</action>
+    </keybind>
+    <keybind key="XF86AudioRaiseVolume">
+	<action name="Execute">
+		<command>/usr/local/bin/vol_change.sh 5%+</command>
+	</action>
+    </keybind>
+    <keybind key="XF86PowerOff">
+# This is a script that runs when the Power Button is pressed while the system is on. Prevents accidental shutdowns.
+# But in order for this to work, we also need to modify a file in the system to first ignore the Power Key so that
+# this catches it instead.
+	<action name="Execute">
+		<command>/usr/local/bin/power_dunst.sh</command>
+	</action>
+    </keybind>
+[WHAT TO PUT IN lxde-rc.xml END]
+openbox --reconfigure <- to apply your new settings without rebooting and test them
+once done with above copy that file to the global fallback file:
+sudo cp ~/.config/openbox/lxde-rc.xml /etc/xdg/openbox/LXDE/rc.xml
+if you have logged into root account before and want to apply those changes there as well:
+sudo rm -rf /root/.config/openbox
+
+[Info on New User Accounts and /etc/skel/]
+For New User Auto Setup: <- we're not using this but it's nice to know
+/etc/skel/ <- this works as a override for new user accounts where files put in here will automatically be placed in that account's '~' or home folder/directory.
+example if we use this method instead of the 'Openbox Config File Fallback' above:
+sudo mkdir -p /etc/skel/.config/openbox
+sudo cp ~/.config/openbox/lxde-rc.xml /etc/skel/.config/openbox/lxde-rc.xml
+
+####Concerning Power Supplied to the Audio Drivers: <- need to ask Gemini if it's possible this is causing audio issues..
+sudo nano /etc/modprobe.d/audio-power-fix.conf
+[WHAT TO PUT IN audio-power-fix.conf START]
+options snd_hnd_intel power_save=0 power_save_controller=N
+options snd_soc_core pm_disable=1
+[WHAT TO PUT IN audio-power-fix.conf END]
+
+Configuring the Soundcard:
+sudo pacman -S alsa-utils pipewire pipewire-pulse pipewire-alsa wireplumber --noconfirm
+sudo systemctl --global enable pipewire.service pipewire-pulse.service
+To test your sounds, plug a wired headphone in or maybe a Bluetooth Headphone then run this in SakuraTerminal:
+speaker-test -c 2 -t wav <- this should output audio saying "Front Left" on the Left Speaker/Headphone and "Front Right" on the Right Speaker/Headphone.
+If that doesn't work correctly, tell an LLM like Google Gemini(FREE) about your system setup and ask it for commands to run in order to diagnose it like this:
+"I am currently using this device to type this, which is a Asus Chromebook Flip C100PA in Arch Linux 32-Bit via dual booting from external USB Disk. Have alsa, pipewire, pipewire-pulse and wireplumber installed to manage audio output. What commands should I run in the terminal to produce a "audio_diagnostics.txt" for you to examine and diagnose my problem which is 'STATE_YOUR_ISSUE_HERE'?"
+STATE_YOUR_ISSUE_HERE can be something like "Audio not outputting into my Left Headphone/Speaker".
+Right now the LLM no longer accepts txt files so you might want to find an online free txt file to pdf converter and then upload the pdf instead into the LLM.
+You will probably use these commands in diagnosing that:
+speaker-test -c 2 -t wav <- '-c' number of channels and '-t' test type which is a wav file type of a sound file.
+sudo alsactl store <- saves your config to survive reboots
+wpctl status <- to view your pipewire config
+alsamixer <- to open the terminal UI of the default packaged sound manager with the OS. Use this to test volume changes.
+amixer -c 0 contents | grep -A 7 "Filter_Text" <- returns the controls of alsa with 'grep' to show only containing 'Filter_Text' and '-A 7' flag that says every matched entry to show it's following 7 output lines as well.
+amixer -c 0 scontrols <- '-c 0' tells which soundcard(index:0) to check
+
+[Install Dunst and Dunstify for UI/DE Notifications concerning Accidental Shutdown and Volume Changes which we are going to do below this.]
+sudo pacman -S dunst
+
+[Volume Key Script] <- make sure that soundcard is working correctly first! The Asus Chromebook Flip C100PA has pretty bad internal speakers audio output on this setup, as long as the headphone jack mode is correctly working let's just leave it at that.
+sudo nano /usr/local/bin/vol_change.sh <- '/usr/...' is a globally accessible directory so we put our custom scripts here to be executable/accessible by any account on the system.
+[WHAT TO PUT INSIDE THAT vol_change.sh START]
+#!/usr/bin/env bash
+
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+if [ "$1" == "toggle" ]; then
+    wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+else
+    # 1. Natively change volume and cap it strictly at a max of 1.00 (100%)
+    wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "$1"
+fi
+
+# 2. Capture the full raw state line to check for mute status
+MUTE_STATE=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)
+
+# 3. Safely parse and convert WirePlumber's decimal volume to a clean percentage
+VOLUME_RAW=$(echo "$MUTE_STATE" | awk '{print $2}')
+
+# Fallback check if the string comes back completely blank
+if [ -z "$VOLUME_RAW" ]; then
+    VOLUME=0
+else
+    # Natively multiply the decimal by 100 using a fast AWK integer tool
+    VOLUME=$(echo "$VOLUME_RAW" | awk '{print int($1 * 100 + 0.5)}')
+fi
+
+# 4. Interrogate the Physical Kernel Jack State to Toggle Hardware Amplifiers
+# This specific model has a physical switch in the Headphone Jack that is handled on the Kernel Level.
+# Note: Based on your amixer -c 0 contents results, your jack check(Headphone Jack Status=on|off) utilizes numid=67
+HP_JACK_STATE=$(amixer -c 0 cget numid=67 2>/dev/null | grep ": values=" | awk -F= '{print $2}')
+
+if [[ "$HP_JACK_STATE" == "on" ]]; then
+    DISPLAY_NAME="Headphones"
+else
+    DISPLAY_NAME="Speakers"
+fi
+# Pipewire handles the switching of Audio Routing based on the Jack State
+# so no need to explicitly include that operation here. The above is just for what to show in the UI Notification
+# as which audio device volume is being changed.
+
+# 5. Check if mute status is active via pattern matching
+# If it is muted, it overrides and suppresses volume percentage changes in Dunst
+if [[ "$MUTE_STATE" == *"[MUTED]"* ]]; then
+    notify-send -a 'Volume' -h string:x-dunst-stack-tag:volume "$DISPLAY_NAME: Muted"
+else
+    notify-send -a 'Volume' -h string:x-dunst-stack-tag:volume -h int:value:"$VOLUME" "$DISPLAY_NAME: $VOLUME%"
+fi
+[WHAT TO PUT INSIDE THAT vol_change.sh END]
+sudo chown root:root /usr/local/bin/vol_change.sh <- to make root account own it
+sudo chmod 755 /usr/local/bin/vol_change.sh <- to make any other account on device be able to use/execute it.
+The script above will call on 'dunst' to show a UI/UX notification when you change your audio volumes. 'dunst' is not installed by default and will have to be included in the AutoStart file that executes after every desktop login.
+
+[Set AutoStart to fire up Dunst on User Session Login]
+sudo nano /etc/xdg/openbox/autostart
+[WHAT TO PUT INSIDE THAT autostart START]
+@lxpanel --profile LXDE
+@pcmanfm --desktop --profile LXDE
+@xscreensaver -no-splash
+@dunst
+@/usr/local/bin/chromebook-audio-fix.sh <- optional see lines below
+[WHAT TO PUT INSIDE THAT autostart END]
+
+[These are just scripts I had to make to fix the audio, your setup or solution could be different]
+sudo nano /usr/local/bin/chromebook-audio-fix.sh
+[WHAT TO PUT INSIDE THAT chromebook-audio-fix.sh START]
+#!/usr/bin/env bash
+# Wait a moment for WirePlumber to finish initializing hardware profiles
+sleep 3
+
+# 1. Force the physical pre-amps to clear digital/analog gain scaling bottlenecks
+amixer -c 0 cset numid=47 3 >/dev/null 2>&1
+amixer -c 0 cset numid=48 3 >/dev/null 2>&1
+amixer -c 0 cset name='Speaker Playback Switch' on,on >/dev/null 2>&1
+amixer -c 0 cset name='Headphone Playback Switch' on,on >/dev/null 2>&1
+
+# 2. Hard-wire global master switches and link the stereo broadcasting channels
+amixer -c 0 cset name='Headphone Left Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Headphone Right Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Speaker Left Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Speaker Right Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='LINMOD Mux' 'Left and Right' >/dev/null 2>&1
+
+# 3. CRITICAL SPEAKER ROUTING: Unlink crossbars and lock Left Internal Speaker paths
+amixer -c 0 cset name='Left Speaker Mixer Left DAC Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Right Speaker Mixer Right DAC Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Left Speaker Mixer Right DAC Switch' off >/dev/null 2>&1
+amixer -c 0 cset name='Right Speaker Mixer Left DAC Switch' off >/dev/null 2>&1
+
+# 4. CRITICAL HEADPHONE ROUTING: Maintain working headphone layouts
+amixer -c 0 cset name='Left Headphone Mixer Left DAC Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Right Headphone Mixer Right DAC Switch' on >/dev/null 2>&1
+amixer -c 0 cset name='Left Headphone Mixer Right DAC Switch' off >/dev/null 2>&1
+amixer -c 0 cset name='Right Headphone Mixer Left DAC Switch' off >/dev/null 2>&1
+[WHAT TO PUT INSIDE THAT chromebook-audio-fix.sh END]
+
+[Again optional almost same as above]
+sudo nano /etc/xdg/lxsesion/LXDE/autostart
+[WHAT TO PUT INSIDE THAT autostart START]
+#
+# These things are run when an Openbox X Session is started.
+# You may place a similar script in $HOME/.config/openbox/autostart
+# to run user-specific things.
+#
+
+# If you want to use GNOME config tools...
+#
+#if test -x /usr/lib/openbox/gnome-settings-daemon >/dev/null; then
+#  /usr/lib/openbox/gnome-settings-daemon &
+#elif which gnome-settings-daemon >/dev/null 2>&1; then
+#  gnome-settings-daemon &
+#fi
+
+# If you want to use XFCE config tools...
+#
+#xfce-mcs-manager &
+/usr/local/bin/chromebook-audio-fix.sh &
+[WHAT TO PUT INSIDE THAT autostart END]
+
+[Again optional almost same as above]
+sudo nano /etc/udev/rules.d/99-chromebook-audio.rules
+[WHAT TO PUT INSIDE THAT 99-chromebook-audio.rules START]
+SUBSYSTEM=="sound", ACTION=="add", RUN+="/usr/local/bin/chromebook-audio-init.sh"
+[WHAT TO PUT INSIDE THAT 99-chromebook-audio.rules END]
+
+[Again optional almost same as above depending on your solution to the soundcard management]
+sudo nano /usr/local/bin/chromebook-audio-init.sh
+[WHAT TO PUT INSIDE THAT chromebook-audio-init.sh START]
+#!/usr/bin/env bash
+# 1. Force the physical Master Speaker power gates completely ON
+amixer -c 0 cset numid=77 on >/dev/null 2>&1
+
+# 2. Reset the hidden hardware Digital Coarse tracking lines (Forces line voltage)
+amixer -c 0 cset numid=29 0,0 >/dev/null 2>&1
+
+# 3. Open up the Master Left Speaker Pre-Amp block directly
+amixer -c 0 cset numid=49 3 >/dev/null 2>&1
+
+# 4. Reconnect the Left Speaker back onto the Master Left DAC track
+amixer -c 0 cset numid=123 on >/dev/null 2>&1
+amixer -c 0 cset numid=124 off >/dev/null 2>&1
+
+# 5. Enforce identical gain matching to both left and right physical speaker drivers
+amixer -c 0 cset numid=54 35,35 >/dev/null 2>&1
+[WHAT TO PUT INSIDE THAT chromebook-audio-init.sh END]
+
+[Accidental Power Off via Power Button Protection]
+We will make another script that utilizes 'dunst' and it's partner 'dunstify' to make a accidental shutdown via power button prevention notification/confirmation:
+sudo nano /usr/local/bin/power_dunst.sh
+[WHAT TO PUT INSIDE THAT power_dunst.sh START]
+#!/bin/bash
+
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+# Using the keyword "default" maps the action directly to the notification body click.
+ACTION=$(dunstify -u critical \
+                  -t 8000 \
+                  -A "default,Shut Down" \
+                  "Power Button Pressed" "Tap notification to Confirm Shut Down.")
+
+# Check if "default" or the numeric code for it was returned
+if [ "$ACTION" = "default" ] || [ "$ACTION" = "2" ]; then
+    poweroff
+fi
+[WHAT TO PUT INSIDE THAT power_dunst.sh END]
+sudo chown root:root /usr/local/bin/dunst_power.sh
+sudo chmod 755 /usr/local/bin/dunst_power.sh
+The above script will also need us to modify the login from systemd to ignore the power key and have Openbox handle it instead to run the above 'power_dunst.sh'.
+sudo nano /etc/dunst/dunstrc
+[WHAT TO EDIT INSIDE THAT dunstrc START]
+...
+    # Markup is allowed
+    format = "<b>%s</b>\n%b\n%a" <- change to this
+
+    # Alignment of message text.
+...
+    # These values can be strung together for each mouse event, and
+    # will be executed in sequence.
+    mouse_left_click = do_action, close_all <- change to this
+    mouse_middle_click = none <- change to this
+    mouse_right_click = close_all
+
+# Experimental features that may or may not work correctly. Do not expect them
+...
+[WHAT TO EDIT INSIDE THAT dunstrc END]
+
+[Modify the systemd file to ignore the Physical Power Button when the system is on and running so that it gets caught by Openbox instead to run the Dunst Notification instead]
+sudo nano /etc/systemd/logind.conf
+[WHAT TO EDIT INSIDE THAT logind.conf START]
+...
+[Login]
+HandlePowerKey=ignore
+...
+[WHAT TO EDIT INSIDE THAT logind.conf END]
+sudo systemctl restart systemd-logind <- to apply the change without rebooting
+
+[Optional Location Data for Weather Plugin]
+The reason your weather plugin says "location not set" and fails to search for your city is because the legacy Yahoo Weather API hardcoded into the LXPanel plugin was shut down. Because the search feature is dead, typing your city into the GUI will do nothing. However, you can fix this by manually entering your location coordinates directly into the LXDE panel configuration file. 
+Open SakuraTerminal (Ctrl + Alt + T) and follow these steps to force it to work:
+Step 1: Look up your Location Codes
+The plugin requires a WOEID (Where on Earth ID) or a literal fallback string.
+Open a browser or terminal and look up your city coordinates.
+For example, since you are in Floridablanca, Pampanga, your parameters are:
+city: Floridablanca
+state: Pampanga
+country: Philippines
+woeid: 1167440 (You can find your specific city WOEID code online, or use this one).
+
+nano ~/.config/lxpanel/LXDE/panels/panel
+Plugin {
+    type=weather
+    Config {
+        alias="Floridablanca"
+        city="Floridablanca"
+        state="Pampanga"
+        country="Philippines"
+        woeid="1167440"
+        units=c <- or f for fahrenheit
+        interval=15
+        enabled=1
+    }
+}
+
+[For when resetting Desktop Panels while on GUI/DesktopEnvironment Terminal(Sakura) and not TTY]
+killall lxpanel
+lxpanel --profile LXDE &
+
+[Browser AsOf 06-17-2026]
+Step 1: Install Firefox
+sudo pacman -Syu firefox
+Step 2: Install uBlock Origin
+The absolute cleanest way to install uBlock Origin on Arch Linux is to do it straight through the browser rather than the command line. This ensures you get the most up-to-date version directly from the maintainer:
+Open your applications menu, go to Internet, and click Firefox Web Browser.
+Inside Firefox, navigate to the official Mozilla Add-ons page for uBlock Origin.
+Click the blue Add to Firefox button.
+A small pop-up window will ask for permissions; click Add.
+
+⚠️ Crucial Performance Tweaks for your Chromebook
+Because your Veyron Minnie features an older processor, modern sites might feel slightly heavy. Run these two quick tweaks inside Firefox to make it blazing fast:
+Activate uBlock's Strict Blocking: Click the red uBlock Origin extension icon in the top right corner, open its dashboard settings gear, and under the Filter Lists tab, ensure Suspicious domains and AdGuard URL Tracking Protection are checked. This blocks heavy tracking scripts before your ARM processor even spends time reading them.
+Turn off Telemetry:
+In Firefox, go to about:preferences#privacy via the address bar, scroll down to Firefox Data Collection and Use, and uncheck all boxes. This stops background processing cycles, freeing up CPU overhead for loading actual web text.
+Once Firefox is installed, test out a few web pages. Does the browser open up smoothly, and are ads blocking successfully for you? When restarting the system and running Firefox again you should have the option to restore the previous session.
+
+[For Streaming Screen Through Local Network To Another PC|Device]
+sudo pacman -S ffmpeg
+sudo modprobe snd-aloop
+sudo nano /etc/asound.conf
+[WHAT TO PUT IN THAT asound.conf START]
+pcm.!default {
+	type plug
+	slave.pcm "dmixer"
+}
+
+pcm.dmixer {
+	type dmix
+	ipc_key 1024
+	ipc_key_add_uid false
+	ipc_perm 0660
+	slave {
+		pcm "hw:0,0"
+		rate 44100
+		channels 2
+	}
+}
+
+ctl.!default {
+	type hw
+	card 0
+}
+[WHAT TO PUT IN THAT asound.conf END]
+sudo nano /usr/local/bin/start_stream.sh
+[WHAT TO PUT IN THAT start_stream.sh START]
+RESOLUTION="1280x800"
+TARGET_IP="192.168.1.2" <- change this to your Stream Receiving PC's IP Address.
+PORT="9999"
+echo "Create a Media Source, Unmark Local File, Input: udp://127.0.0.1:9999"
+echo "Input Format = mpegts"
+arecord -f CD -D hw:1,0 2>/dev/null | ffmpeg -f x11grab -video_size "$RESOLUTION" -framerate 24 -i :0.0 -f s16le -ar 44100 -ac 2 -i pipe:0 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -profile:v baseline -tune zerolatency -c:a mp2 -b:a 128k -f mpegts udp://192.168.1.2:9999
+[WHAT TO PUT IN THAT start_stream.sh END]
+# use command: 'sudo sh /usr/local/bin/start_stream.sh' to start the stream into your local network.
+Receive the stream in OBS:
+On your main streaming computer, open OBS.
+Add a new source and select Media Source.
+Uncheck Local File.
+In the Input field, type exactly: udp://127.0.0.1:9999 (if OBS is on the receiving PC) or use udp://0.0.0.0:9999. Set the Input Format to mpegts.
+
+[Script that can be called with simply typing 'create_account.sh' in the Sakura or any other Terminal to create new user accounts]
+sudo nano /usr/local/bin/create_account.sh
+[WHAT TO PUT IN THAT create_account.sh START]
+#!/bin/bash
+
+# Force the script to run with administrative privileges automatically
+if [ "$EUID" -ne 0 ]; then
+    echo "This script needs admin privileges to create accounts."
+    echo "Please enter your password below to proceed."
+    exec sudo "$0" "$@"
+fi
+
+clear
+echo "=========================================="
+echo "    Chromebook New User Account Creator   "
+echo "=========================================="
+echo ""
+
+# 1. Get the username
+while true; do
+    read -p "Enter a name for the new account (lowercase letters only, no spaces): " USERNAME
+    # Convert input to lowercase and remove spaces for safety
+    USERNAME=$(echo "$USERNAME" | tr -d ' ' | tr 'A-Z' 'a-z')
+    
+    if [ -z "$USERNAME" ]; then
+        echo "The account name cannot be blank. Please try again."
+        echo ""
+    elif id "$USERNAME" &>/dev/null; then
+        echo "An account with the name '$USERNAME' already exists. Please choose a different name."
+        echo ""
+    else
+        break
+    fi
+done
+
+echo ""
+echo "------------------------------------------"
+echo "        Account Permission Level          "
+echo "------------------------------------------"
+echo "Should this user be an Administrator?"
+echo ""
+echo " [N] Standard User (Recommended for guests/kids)"
+echo "     - CANNOT install or remove software."
+echo "     - CANNOT alter core system settings."
+echo "     - Helps save storage space on your 16GB internal storage."
+echo ""
+echo " [Y] Administrator"
+echo "     - CAN install new applications."
+echo "     - CAN update the system and change settings."
+echo "     - Full control over the entire Chromebook."
+echo "------------------------------------------"
+
+# 2. Ask for administrative privileges
+while true; do
+    read -p "Make this user an administrator? (y/n): " CHOICE
+    CHOICE=$(echo "$CHOICE" | tr 'A-Z' 'a-z') # Convert to lowercase
+    
+    if [[ "$CHOICE" == "y" || "$CHOICE" == "yes" ]]; then
+        GROUPS="audio,video,wheel"
+        IS_ADMIN=true
+        break
+    elif [[ "$CHOICE" == "n" || "$CHOICE" == "no" || -z "$CHOICE" ]]; then
+        GROUPS="audio,video"
+        IS_ADMIN=false
+        break
+    else
+        echo "Invalid input. Please type 'y' for Yes or 'n' for No."
+    fi
+done
+
+echo ""
+echo "Creating account for '$USERNAME'..."
+
+# 3. Create the user with the dynamically selected hardware and system groups
+useradd -m -G "$GROUPS" "$USERNAME"
+
+# Check if user creation was successful
+if [ $? -eq 0 ]; then
+    echo "Account tracking folder created successfully."
+    echo ""
+    
+    # 4. Handle password assignment
+    echo "------------------------------------------"
+    echo "Now, let's set a password for $USERNAME."
+    echo "Note: The letters will NOT show on screen as you type them for safety."
+    echo "------------------------------------------"
+    
+    while true; do
+        passwd "$USERNAME"
+        if [ $? -eq 0 ]; then
+            echo ""
+            echo "Success! The password has been set."
+            break
+        else
+            echo "Passwords did not match or were too weak. Let's try again."
+            echo ""
+        fi
+    done
+    
+    echo ""
+    echo "=========================================="
+    echo " Done! The account '$USERNAME' is ready."
+    if [ "$IS_ADMIN" = true ]; then
+        echo " Privilege Level: Administrator (Can install apps)"
+    else
+        echo " Privilege Level: Standard User (Restricted access)"
+    fi
+    echo " They can now log in to the Chromebook."
+    echo "=========================================="
+else
+    echo "An unexpected error occurred while creating the account."
+fi
+[WHAT TO PUT IN THAT create_account.sh END]
+
+[Script that can be called with simply typing 'delete_user.sh' in the Sakura or any other Terminal to list all erasable accounts and delete them if wanted]
+sudo nano /usr/local/bin/delete_user.sh
+[WHAT TO PUT IN THAT delete_user.sh START]
+#!/bin/bash
+
+# Force the script to run with administrative privileges automatically
+if [ "$EUID" -ne 0 ]; then
+    echo "This script needs admin privileges to delete accounts."
+    echo "Please enter your password below to proceed."
+    exec sudo "$0" "$@"
+fi
+
+clear
+echo "=========================================="
+echo "    Chromebook User Account Remover       "
+echo "=========================================="
+echo ""
+
+echo "Fetching a list of accounts that can be deleted..."
+echo "Press Alt+C to cancel this process anytime..."
+echo "Beware of haphazardly using Alt+C to suddenly cancel Shell Operations..."
+echo "------------------------------------------"
+
+# List all user accounts on the machine with a User ID (UID) of 1000 or greater.
+# This cleanly skips system profiles (like root, bin, daemon, pipewire) for safety.
+USER_LIST=$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd)
+
+if [ -z "$USER_LIST" ]; then
+    echo "No deletable user accounts found on this Chromebook."
+    echo "=========================================="
+    exit 0
+fi
+
+# Print the active accounts so the user can easily see them
+echo "Found the following accounts on this machine:"
+echo ""
+echo "$USER_LIST"
+echo "------------------------------------------"
+echo ""
+
+# 1. Ask for the target account name
+while true; do
+    read -p "Type the EXACT name of the account you want to delete: " TARGET_USER
+    TARGET_USER=$(echo "$TARGET_USER" | tr -d ' ' | tr 'A-Z' 'a-z') # clean input
+    
+    if [ -z "$TARGET_USER" ]; then
+        echo "The account name cannot be blank."
+        echo ""
+    elif ! id "$TARGET_USER" &>/dev/null; then
+        echo "The account '$TARGET_USER' does not exist. Please check the list above."
+        echo ""
+    elif [ "$TARGET_USER" = "$SUDO_USER" ] || [ "$TARGET_USER" = "$(whoami)" ]; then
+        echo "⚠️ WARNING: You cannot delete the account you are currently logged into!"
+        echo "Please log into a different account if you want to delete this one."
+        echo ""
+    else
+        break
+    fi
+done
+
+echo ""
+echo "------------------------------------------"
+echo "        Storage Cleanup Option            "
+echo "------------------------------------------"
+echo "Should we delete their files too?"
+echo ""
+echo " [N] Keep Files (Safest)"
+echo "     - Deletes the login account."
+echo "     - KEEPS their documents and pictures inside /home/$TARGET_USER."
+echo ""
+echo " [Y] Erase Everything (Recommended for your 16GB Internal Storage)"
+echo "     - Deletes the login account."
+echo "     - PERMANENTLY erases all files, folders, and history for this user."
+echo "     - Instantly frees up disk space."
+echo "------------------------------------------"
+
+# 2. Ask whether to purge data
+while true; do
+    read -p "Permanently erase their files and folders? (y/n): " CLEAN_FILES
+    CLEAN_FILES=$(echo "$CLEAN_FILES" | tr 'A-Z' 'a-z')
+    
+    if [[ "$CLEAN_FILES" == "y" || "$CLEAN_FILES" == "yes" ]]; then
+        DEL_FLAGS="-r -f"
+        PURGE_DESC="Account and all files successfully wiped."
+        break
+    elif [[ "$CLEAN_FILES" == "n" || "$CLEAN_FILES" == "no" || -z "$CLEAN_FILES" ]]; then
+        DEL_FLAGS="-f"
+        PURGE_DESC="Account deleted. Their files were safely kept inside /home/$TARGET_USER."
+        break
+    else
+        echo "Invalid choice. Please type 'y' for Yes or 'n' for No."
+    fi
+done
+
+echo ""
+echo "Processing removal for '$TARGET_USER'..."
+
+# Kill any lingering background tasks running under the target user so userdel doesn't lock up
+killall -u "$TARGET_USER" &>/dev/null
+sleep 1
+
+# 3. Execute the deletion command
+userdel $DEL_FLAGS "$TARGET_USER"
+
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo " SUCCESS! $PURGE_DESC"
+    echo "=========================================="
+else
+    echo "❌ Error: Could not finish removing the account."
+    echo "Ensure the user is fully logged out before attempting to delete them."
+fi
+[WHAT TO PUT IN THAT delete_user.sh END]
+
+####TO-DO####
+UPDATE rc.xml
+Create or use a crash prevention utility when RAM usage overloads or CPU overloads.
+Fix full shutdown leaving the "DiskReading Light On" causing the chromebook to heat up when it's supposed to be already shut down.
+install xdotool, brightnessctl, slock
+
+set nano as default text editor instead of vim or any other traditional text editor or that Dave'sTinyEditor
+
+Upload to GitHub Repo along with the packages that were used here for preservation.
+And the Google Chromebook Restore Media as well.
+
