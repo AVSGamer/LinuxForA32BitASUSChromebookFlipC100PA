@@ -28,7 +28,7 @@ Not kidding! That's a life-school-hack to finish exams faster! You skim through 
 But in this case it's more of a "Is this real or a rick-roll?" or is this guide seemingly off with missing details? Where can it go wrong?  
 Install flashrom for the firmware modification if you want to prevent your LinuxOS installation getting bricked by accidentally re-enabling "OS Verification" or someone does it for you ;):  
 ```bash
-sudo apk add flashrom'
+sudo apk add flashrom
 ```  
 Install the ChromeOS Futility package:  
 ```bash
