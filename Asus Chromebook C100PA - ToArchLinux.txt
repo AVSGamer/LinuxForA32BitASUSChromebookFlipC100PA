@@ -1,8 +1,214 @@
+[Installing Linux on an Asus Chromebook Flip C100PA]
+::Distros I've tried::
+Arch Linux 32Bit for ARM Systems like this device:
+- Current(July 2026) official instruction from Arch Linux Website works(only as USB Mode) only if you change the main instruction set's used 'http://os.archlinuxarm.org/os/ArchLinuxARM-veyron-latest.tar.gz' to 'http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-chromebook-latest.tar.gz'
+- Haven't tried modifying the bios beforehand in conjunction with the original .tar.gz or any tar.gz for that matter.
+- Can read all the raw notes below to see stuff I've tried.
+::Used the Arch Linux Live USB to install these to the internal storage::
+PrawnOS:
+- Works booted from internal storage, not tested much, opted to use the next in this list instead.
+PostMarketOS:
+- What I ended up using instead, boots from internal storage.
+- Works great out of first boot, no need to configure the volume adjustment toast/dunst-notifications, all keys on keyboard working as supposed to be with the device's defaults.
+- No need to mess around trying to fix the audio routing, works out-of-the-box or rather out of fresh install.
+- No available pre-built image online so I used the website's instruction on building the system image file using the Live USB Arch Linux
+- The above had me running 'install pmbootstrap command using my Linux's package manager' then 'pmbootstrap init' then mostly using defaults by just pressing enter key then selecting the 'community build' instead of the 'edge' or bleeding edge experimental build, then choosing xfce4 as the display manager then the rest are mostly defaults. You don't need to specify to have 'sudo' installed as it's pre-packaged with it and would rather not put any in the extras-to-install asked. Once the image is built use 'pmbootstrap install --no-cgpt --sdcard /dev/mmcblk0' to install into the internal storage. Check if it finishes with 'DONE!', if it doesn't then just keep repeating running that command until it does, at first execution it's slow because it has to download some stuff but subsequent executions will be faster as it only needs to verify that the files are already there and not corrupted to skip trying to download them again.
+
+[Once the Operating System or OS is installed and tested to be running from internal storage]
+For simplicity's sake since this the editor I been using a lot in Linux and we'll be mentioned hereon out, you can use whichever you want:
+'sudo apk add nano'
+It's also a good habit to read through the entire instruction set such as this first before actually executing/doing them one by one, and because of that I purposely hid the way to save edits in nano somewhere down this guide :D
+Not kidding! That's a life-school-hack to finish exams faster! You skim through every question first identifying every easy ones so you don't spend too much time on difficult questions and end up losing time to answer those easy ones.
+But in this case it's more of a "Is this real or a rick-roll?" or is this guide seemingly off with missing details? Where can it go wrong?
+Install flashrom for the firmware modification if you want to prevent your LinuxOS installation getting bricked by accidentally re-enabling "OS Verification" or someone does it for you ;):
+'sudo apk add flashrom'
+Install the ChromeOS Futility package:
+'sudo apk add vboot-utils'
+Modify the bios flags to shorten the booting time's default ChromeOS' Developer White Screen where you used to have to press 'ctrl+d' for internal storage boot or 'ctrl+u' for usb boot.
+And turn that into taking only 2 seconds instead of 30 seconds. Also disabling the spacebar function on that screen to 'Re-enable OS Verification' so that your Linux Installation doesn't get bricked.
+And lastly forcing the device to be always in dev_mode, totally eliminating the need to press 'ctrl+d' everytime to boot into the Linux OS.
+::How To Modify the BIOS Flags::
+This is specifically an old Chromebook where in those years they used a ground screw as the Firmware/Bios Write-Protection Mechanism, so you have to open the chassis and remove that first.
+In newer models, it seems to be directly attached to the battery's power management board so for that, you might have to remove the battery, I am not sure with this one so better look at the link below:
+https://docs.mrchromebox.tech/docs/firmware/wp/disabling.html <- this should serve as a better source of information on how to do this whole section.
+Seems like in most Chromebooks, the Write-Protect Screw is a screw with an arrow marking pointing to it AND once you unscrew/remove it, underneath is a circular copper with tin/silver dots and you can imagine why that works similar to switch as it closes the circuit serving as the Hardware Level Write-Protection for the Firmware/Bios. Since you've opened it up might as well clean it with a not too strong cleaning air-spray can or use a not too hard bristle brush ensuring the write protect screw's previous placement area is no longer connecting where the divided by half or quarters circular copper is.
+After that comes disabling the Software Level Write-Protect Switch/Flag. 'sudo flashrom --programmer internal --wp-disable --wp-range 0,0' <- this disables the Software Level Firmware Write-Protection of the BIOS.
+Now we can backup our existing installed FW/BIOS then reflash that back in with a command that modifies the BIOS Flags.
+'sudo flashrom -r gbb.bin' <- The -r flag there tells the command 'flashrom' to backup the existing installed BIOS followed by where you want to save it and including the filename with the correct extension of '.bin'
+I personally saved mine on the external live usb installation of ArchLinux32Bit so that even if the device itself get's bricked by this operation, I should be able to log back into the Live USB and restore it.
+So I used this instead 'sudo flashrom -r /usr/veyronfwbak/bios_backup.bin'
+'futility gbb -s --flags=0x9 gbb.bin' <- This modifies the 'gbb.bin' or whatever file you named it as to replace the current BIOS Flags with '0x8' + '0x1' = '0x9' in that backed up file.
+For reference on the flags: https://chromium.googlesource.com/chromiumos/platform/vboot_reference/+/firmware-link-2695.B/scripts/image_signing/set_gbb_flags.sh
+The way those flags identifiers are structed is in a way that you add up all the numbers of the flags you want to use then it gets divided into the different flags to use based on the highest number of a flag that is known/usable downwards. Like ?reductive?, in the case of 0x32: it is 0x20 with 12 leftover so the next flag it enables is 0x10 then 0x2.
+'flashrom -w gbb.bin' <- this flashes/writes your modified BIOS/FW file into the one currently installed, overwriting it. Overwriting is a computer term that just means whatever was in it is now replaced with what is just placed in it.
+Can reboot the system now.
+
+[The Hard Shutdown Fix]
+Somehow this specific model has problems fully shutting down. The OS does shutdown but the Disk-Read-LED or light on the side doesn't turn off meaning the device is not really fully turned off yet.
+This can cause heat build up as it is stored in a bag as it is if forgotten to long-press the power button to do a hard shutdown shouldn't be done everytime.
+I've tried ACPID but that doesn't work since this installation have nowhere to hook that into.
+What worked is a SystemD.service file configuration.
+The kernel or very low-level system command to shut the power off or disconnect the battery from the board does work so we put that in the SystemD.service that we will add.
+SystemD is not the only ?system-services-manager? you could be using a different one depending on the display-manager you selected in making your PostMarketOS Imagefile, it could be 'rc-update' or BusyBox-RC or something like that
+We first need to unlock the emergency interface of the kernel:
+'sudo echo 1 > /proc/sys/kernel/sysrq' <- this survives reboots.
+To test that it works:
+'sudo sync' <- saves your current session/work/some settings.
+'sudo echo o > /proc/sysrq-trigger' <- this will suddenly/abruptly turn off the device without even showing you the shutdown animation and should turn off the Disk-Reading LED.
+
+Instead of routing the XFCE4's GUI Power Commands to 'systemctl poweroff' command like I had to try as suggested by the LLM I was using. That in conjunction with a script that calls those commands and needs a lot of permission
+manipulation to get all set up and ultimately just not work. We make/use a SystemD Service instead to connect the command to a system process that is called when pressing shutdown or any power options from the GUI.
+Make the service file:
+'sudo nano /etc/systemd/system/chromebook-hardware-poweroff.service'
+Inside that we put:
+
+[Unit]
+Description=Asus Chromebook Hard Poweroff Trigger
+DefaultDependencies=no
+Before=umount.target
+#Conflicts is what prevents reboots from not fully occuring since in order to reboot, it has to pass through umount.target first
+#And this file as indicated by WantedBy at the bottom is executed when umount.target is called by the system.
+#shutdown.target (Software Exit Phase)
+#then
+#umount.target (Sealing of the '/' directory or essentially your entire rootfs or storage partition/drive then dismounting it.)
+#then
+#final.target (Last phase of the shutting down right before cutting electricity off from the motherboard.)
+#then
+#poweroff.target (Electricity Kill Switch)
+Conflicts=reboot.target 
+
+[Service]
+#Type is set to only get triggered once when called so it actually just sits as 'inactive' when checked via 'systemctl status' command once enabled.
+Type=oneshot
+#/bin/sh is the location of the sh program that is responsible for running scripts or '.sh' files
+#essentially '/' is your rootfs partition's highest directory then 'bin/sh' is inside that.
+#You will notice this when you use 'cd' or change directory a lot in conjunction with 'ls' or 'dir' to see the contents of your current location in the console(user@/:~)
+ExecStart=/bin/sh -c "sync && sleep 5 && echo o > /proc/sysrq-trigger"
+
+[Install]
+WantedBy=umount.target
+
+Double check you got that correctly with no UpperCase/LowerCase/Typo/Misspellings.
+
+Reload the systemctl daemon:
+'sudo systemctl daemon-reload'
+Enable the service we just created:
+'sudo systemctl enable chromebook-hardware-poweroff'
+
+If it doesn't work then you might need to give all users of the device the ability to send the 'o' signal to the kernel emergency interface; /proc/sysrq-trigger.
+Nothing wrong with the above statement since eventually we want any user to be able to fully shutdown the device and not just your selected users.
+'sudo chmod 666 /proc/sysrq-trigger' <- The problem is this doesn't survive reboots. So we make a configuration file to re-apply it every boot-up.
+Make the directory if it doesn't exist yet:
+'sudo mkdir -p /etc/tmpfiles.d'
+Make the file inside that directory:
+'sudo nano /etc/tmpfiles.d/chromebook-power.conf'
+Put this in that file:
+
+f /proc/sysrq-trigger 0666 root root - -
+
+Save with ctrl+o then enter then exit via ctrl+x IF you are using nano as your editor, I've heard VIM is good but haven't really tried it and my first experience finding it hard to just even exit the editor, I am flabbergasted.
+
+That should be enough since SystemD runs as 'root' but if it still doesn't work, then maybe using the code below to give ALL users a Passwordless Execution of the command:
+#Edit your sudoers' configuration file, basically managing user's and their access to the sudo(run as root/admin) command:
+'sudo VISUAL=nano visudo'
+#Add this at the very bottom, but this shouldn't really be needed at all: It just makes executing the command 'systemctl poweroff' and 'systemctl halt' from the console run without asking for admin password.
+#We aren't routing the XFCE4's GUI Power Commands to 'systemctl poweroff'...
+ALL ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff, /usr/bin/systemctl halt
+
+[[[[RAW UNORGANIZED NOTES ON THE WHOLE ORDEAL BELOW]]]]
+
 [Asus Chromebook C100PA - Installation of Arch Linux ARM on this 32-Bit ARM Based System from 10 Years ago.]
 
 Tried using altreact's archbk GitHub repository script but apparently that was for an old deprecated kernel(2017) version.
-
+4:43 on system time - 5:19 <- These are the time it took to write to the external USB from ChromeOS using archbk's script.
+5:35 - 6:11?
 [Returning to my previously tested method of Official Arch Linux Instructions]
+
+[PrawnOS]
+https://github.com/SolidEva/PrawnOS/issues/282#issuecomment-836746297
+
+[pmOS]
+Setup WiFi - Works by default
+[Streaming Script via FFMPEG]
+sudo apk update
+sudo apk add ffmpeg alsa-utils
+sudo nano /etc/asound.conf
+[]
+pcm.!default {
+    type plug
+    slave.pcm "asymed"
+}
+
+pcm.asymed {
+    type asym
+    playback.pcm "dmixer"
+    capture.pcm "dsnooper"
+}
+
+pcm.dmixer {
+    type dmix
+    ipc_key 1024
+    ipc_perm 0660
+    slave {
+        pcm "hw:0,0"
+        rate 44100
+        channels 2
+    }
+}
+
+pcm.dsnooper {
+    type dsnoop
+    ipc_key 2048
+    ipc_perm 0660
+    slave {
+        pcm "hw:0,0"
+        rate 44100
+        channels 2
+    }
+}
+[]
+sudo nano /usr/local/bin/start_stream.sh
+[]
+#!/bin/sh
+RESOLUTION="1280x800"
+TARGET_IP="192.168.1.2" # Change to target PC IP
+PORT="9999"
+
+echo "On receiving PC OBS/VLC, use Input URL: udp://@0.0.0.0:$PORT?listen"
+echo "Input Format = mpegts"
+
+# NATIVE ALSA CAPTURE + SCREEN CAPTURE
+# NOTE: If your UI is Wayland, replace '-f x11grab -i :0.0' with '-f kmsgrab -i /dev/dri/card0'
+ffmpeg -f x11grab -video_size "$RESOLUTION" -framerate 20 -i :0.0 \
+-f alsa -ac 2 -ar 44100 -i default \
+-c:v libx264 -pix_fmt yuv420p -preset ultrafast -tune zerolatency -crf 30 \
+-c:a mp2 -b:a 96k \
+-f mpegts "udp://$TARGET_IP:$PORT?pkt_size=1316"
+
+[]
+sudo chmod +x /usr/local/bin/start_stream.sh
+Setup Keybinds - already pre-configured wow xD
+Disable Touchscreen due to Internal Damage XD <-- current os already has GUI for configuring it
+
+[SwapFile]
+# 1. Create a 2GB allocation file
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+
+# 2. Lock down permissions for system safety
+sudo chmod 600 /swapfile
+
+# 3. Format it as active Swap space
+sudo mkswap /swapfile
+
+# 4. Turn the swap file on
+sudo swapon /swapfile
+
+Setup Office Apps Done
+Test Sounds/Headphones - Works pre-configured on installation
+Point to online documentations about OS and current device setup.
+Try Fix SD Card Slot/HeadphoneLeaf
+
+
 
 Switch to developer mode
 Turn off the laptop.
@@ -29,10 +235,10 @@ umount /dev/sda*
 Start fdisk to create a GPT partition table:
 fdisk /dev/sda
 At the fdisk prompt:
-Type g. This will create a new empty GPT partition table.
+Type g. This will create a new empty GPT partition table. GUID: 6EE1E3D2-528D-4AD2-886F-F329C00F1C9D
 Exit by typing 'w' key.
 Partition the microSD card or USB Drive:
-cgpt create /dev/sda
+cgpt create /dev/sda -> sudo cgpt boot /dev/mmcblk0 -> 18A3D09C-EB21-EA42-9FC4-6CD68B54CF20
 cgpt add -i 1 -t kernel -b 8192 -s 32768 -l Kernel -S 1 -T 5 -P 10 /dev/sda
 To create the rootfs partition, we first need to calculate how big to make the partition using information from 'cgpt show'. Look for the number under the start column for Sec GPT table which is 15633375 in this example:
 localhost / # cgpt show /dev/sda
@@ -72,8 +278,342 @@ pacman-key --init
 pacman-key --populate archlinuxarm
 
 Install the firmware-veyron package, or copy it to the drive for later installation for wifi support.
-pacman -S firmware-veyron
-reboot to have wifi-menu work by typing "wifi-menu"
+pacman -Syyu firmware-Veyron <-- Syyu will prompt to upgrade the kernel at sda1.... !IMPORTANT!
+pacman -S sudo
+pacman -S cgpt
+pacman -Scc
+[If There Are "Could Not Remove Errors" From Sudden Shutdowns During Download/Update]
+sudo rm -rf /var/cache/pacman/pkg/download-*
+pacman -Scc
+pacman -Syu
+[Remove Orphaned/Remnant Packages]
+sudo pacman -Rns $(pacman -Qtdq)
+sudo reboot
+login(root:root)
+wifi-menu
+
+https://mirrors.dotsrc.org/archlinuxarm/os/rockchip/ArchLinuxARM-2026.06-veyron-rootfs.tar.gz
+--------s
+Test #??? Failed without VFS Error on Init just stuck on Power-Controller
+armv7-chromebook-latest.tarball(only working tarball)
+kernel updated via pacman -Syyu after keyring init and populat
+chromeos 75 recovered after making usb live environment then not booted into or logged in -> swapped right away to external boot after recovery.
+did usual partition resizing to put in emmcp3:rootfs emmcp2:kernel
+if using the emmcp1 as root instead FAILS WITH VFS Error and driver not found.
+instead of copying the entire root '/'
+copied only the dev/sda2 or to emmcp3 <- guess this is the correct way.
+just need to remember how I got the kernel to load the drivers for the emmc
+dd from usb live /boot to emmcp2
+umount all
+sync
+reboot
+--------
+Test #??? Failed
+Same as above but did not fully update kernel from within live usb -> declined kernel upgrade after -Syyu
+--------
+Test #Failed [using emmcp1 method from configured already installation, just --repack and use hexid as root but copy the flags in --verify .kpart --verbose] trying to replicate that blackscreen upon change to hexid since that is really probably just the desktop manager failing
+armv7-chromebook-latest.tarball(only working tarball)
+kernel updated via pacman -Syyu firmware-veyron after keyring init and populat
+chromeos 75 recovered after making usb live environment then not booted into or logged in -> swapped right away to external boot after recovery.
+if using the emmcp1 as root instead
+sudo cgpt repair /dev/mmcblk0
+cgpt add -i 5 -b 315392 -s 32 /dev/mmcblk0
+cgpt add -i 3 -b 315424 -s 32 /dev/mmcblk0
+# expand STATE partition
+cgpt add -i 1 -b 315456 -s 30461840 /dev/mmcblk0
+mkfs -t ext4 /dev/mmcblk0p1
+mount -t ext4 /dev/mmcblk0p1 /mnt
+sudo mkdir /tmp/usb
+mount -t ext4 /dev/sda2 /tmp/usb
+sudo cp -ax /tmp/usb/* /mnt
+sudo umount /tmp/usb
+cd /mnt/boot
+sudo futility vbutil_kernel --verify vmlinux.kpart --verbose <- get default flags
+sudo mv vmlinux.kpart vmlinux.kpart.og
+sudo nano kernel.flags
+"console=tty0 init=/sbin/init root=b301 rootwait rw noinitrd\0" <-- not enough XD
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b301 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- turns out the emmc driver is still unknown
+mkdir /usr/share/vboot/devkeys
+cd /usr/share/vboot/devkeys
+sudo curl -LO
+https://github.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel.keyblock
+https://github.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel_data_key.vbprivk
+cd /mnt/boot
+sudo futility vbutil_kernel --repack /mnt/boot/vmlinux.kpart --keyblock /usr/share/vboot/devkeys/kernel.keyblock --signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk --config /mnt/boot/kernel.flags --oldblob vmlinux.kpart.og --arch arm
+sudo dd if=vmlinux.kpart of=/dev/mmcblk0p2 bs=4M
+sudo add cgpt -i 2 -P 10 -T 5 -S 1 /dev/mmcblk0
+sudo add cgpt -i 4 -P 0 -S 0 /dev/mmcblk0
+sudo sync
+sync
+cd ~
+sudo umount /mnt
+sudo sync
+sync
+sudo reboot
+--------
+Test #Try again [using emmcp1 method, just --repack and use hexid as root but copy the flags in --verify .kpart --verbose] trying to replicate that blackscreen upon change to hexid since that is really probably just the desktop manager failing
+armv7-chromebook-latest.tarball(only working tarball)
+kernel updated via pacman -Syyu after keyring init and populat AND NOT installing firmware-Veyron
+above still triggered a kernel update and after reboot no wifi-menu does not work.
+chromeos 75 recovered after making usb live environment then not booted into or logged in -> swapped right away to external boot after recovery.
+if using the emmcp1 as root instead
+sudo cgpt repair /dev/mmcblk0
+cgpt add -i 5 -b 315392 -s 32 /dev/mmcblk0
+cgpt add -i 3 -b 315424 -s 32 /dev/mmcblk0
+# expand STATE partition
+cgpt add -i 1 -b 315456 -s 30461840 /dev/mmcblk0
+mkfs -t ext4 /dev/mmcblk0p1
+mount -t ext4 /dev/mmcblk0p1 /mnt
+sudo mkdir /tmp/usb
+mount -t ext4 /dev/sda2 /tmp/usb
+sudo cp -ax /tmp/usb/* /mnt
+sudo umount /tmp/usb
+cd /mnt/boot
+sudo futility vbutil_kernel --verify vmlinux.kpart --verbose <- get default flags
+sudo mv vmlinux.kpart vmlinux.kpart.og
+sudo nano kernel.flags
+"console=tty0 init=/sbin/init root=b301 rootwait rw noinitrd\0" <-- ?
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b301 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- ?
+mkdir /usr/share/vboot/devkeys
+cd /usr/share/vboot/devkeys
+sudo curl -LO
+https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel.keyblock
+https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel_data_key.vbprivk <---- "error reading signing key" Going with default = no flags edited
+cd /mnt/boot
+sudo futility vbutil_kernel --repack /mnt/boot/vmlinux.kpart --keyblock /usr/share/vboot/devkeys/kernel.keyblock --signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk --config /mnt/boot/kernel.flags --oldblob vmlinux.kpart.og --arch arm
+sudo dd if=vmlinux.kpart of=/dev/mmcblk0p2 bs=4M
+sudo add cgpt -i 2 -P 10 -T 5 -S 1 /dev/mmcblk0
+sudo add cgpt -i 4 -P 0 -S 0 /dev/mmcblk0
+sudo sync
+sync
+cd ~
+sudo umount /mnt
+sudo sync
+sync
+sudo reboot
+--------
+Test #failed [using emmcp3 method] trying to replicate that blackscreen upon change to hexid since that is really probably just the desktop manager failing
+armv7-chromebook-latest.tarball(only working tarball)
+kernel updated via pacman -Syyu after keyring init and populat AND NOT installing firmware-Veyron
+above still triggered a kernel update and after reboot no wifi-menu does not work.
+chromeos 75 recovered after making usb live environment then not booted into or logged in -> swapped right away to external boot after recovery.
+if using the emmcp1 as root instead
+sudo cgpt repair /dev/mmcblk0
+mount -t ext4 /dev/mmcblk0p3 /mnt
+sudo mkdir /tmp/usb
+mount -t ext4 /dev/sda2 /tmp/usb
+sudo cp -ax /tmp/usb/* /mnt
+sudo umount /tmp/usb
+cd /mnt/boot
+sudo curl -LO
+https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel.keyblock
+https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel_data_key.vbprivk <---- "error reading signing key" Going with default = no flags edited
+Turns out GitHub implemented an anti-scraping or too many requests... if it is 199 bytes it failed
+cd /mnt/boot
+sudo futility vbutil_kernel --repack /mnt/boot/vmlinux.kpart --keyblock /usr/share/vboot/devkeys/kernel.keyblock --signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk --config /mnt/boot/kernel.flags --oldblob vmlinux.kpart.og --arch arm
+sudo dd if=vmlinux.kpart of=/dev/mmcblk0p2 bs=4M
+sudo add cgpt -i 2 -P 10 -T 5 -S 1 /dev/mmcblk0
+sudo add cgpt -i 4 -P 0 -S 0 /dev/mmcblk0
+sudo sync
+sync
+cd ~
+sudo umount /mnt
+sudo sync
+sync
+sudo reboot
+---------
+Test #Failed [using emmcp1 method from configured already installation, just --repack and use hexid as root but copy the flags in --verify .kpart --verbose] trying to replicate that blackscreen upon change to hexid since that is really probably just the desktop manager failing
+chromeos 75 recovered after making usb live environment then not booted into or logged in -> swapped right away to external boot after recovery.
+if using the emmcp1 as root instead
+sudo cgpt repair /dev/mmcblk0
+cgpt add -i 5 -b 315392 -s 32 /dev/mmcblk0
+cgpt add -i 3 -b 315424 -s 32 /dev/mmcblk0
+# expand STATE partition
+cgpt add -i 1 -b 315456 -s 30461840 /dev/mmcblk0
+mkfs -t ext4 /dev/mmcblk0p1
+mount -t ext4 /dev/mmcblk0p1 /mnt
+sudo mkdir /tmp/usb
+mount -t ext4 /dev/sda2 /tmp/usb
+sudo cp -ax /tmp/usb/* /mnt
+sudo umount /tmp/usb
+cd /mnt/boot
+sudo futility vbutil_kernel --verify vmlinux.kpart --verbose <- get default flags
+sudo mv vmlinux.kpart vmlinux.kpart.og
+sudo nano kernel.flags
+"console=tty0 init=/sbin/init root=b301 rootwait rw noinitrd\0" <-- VFS Error 'driver?'
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b301 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- same as above
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b302 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- same as above but i noticed the mmcblk0 itself having driver while others don't
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b300 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- freeze but no vfs error..
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=mmcblk0p1 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- VFS Error
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b300 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- freeze but no vfs error..
+the above is in partition 1 root and fresh installation[no dekstop manager]
+"console=tty1 printk.time=1 nosplash init=/sbin/init root=b301 rootfstype=ext4 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0\0" <- VFS Error, Freeze
+the above is in partition 1 root and fresh installation[no dekstop manager]
+Utilizing ITS downloaded now. <- does nothing xD
+Using above decided to add the mkinitcpio modules too "mkinitcpio -P"
+The above without packing/flashing to the kernel partition -> VFS Error one b301 but now shows that it knows the DTB, mmcblk0 with driver but others not.
+Trying above with b300 and the kernel.itb patched vmlinux.kpart <- surprisingly returned a VFS Error
+Trying /dev/mmcblk0p1 <-- same as above
+Trying /dev/mmcblk0 <-- surprisingly no VFS Error but freeze
+Time to try and fix those driver errors by packing the generated initframs
+ The above creates a kernel size that is too much. XD --> broken kernel
+flashing the previous working kernel then
+Using above decided to add the mkinitcpio modules too "mkinitcpio -P armv7-linux"
+Even did mkinitcpio -P firmware-Veyron after and still same freeze xD
+Trying the same with original instruction tarball. Installing internally frome xternal different traball. <--- fck this sh8 trying to switch to another distro XDD
+mkdir /usr/share/vboot/devkeys
+cd /usr/share/vboot/devkeys
+sudo curl -LO
+https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel.keyblock
+https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel_data_key.vbprivk
+cd /mnt/boot
+sudo futility vbutil_kernel --repack /mnt/boot/vmlinux.kpart --keyblock /usr/share/vboot/devkeys/kernel.keyblock --signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk --config /mnt/boot/kernel.flags --oldblob vmlinux.kpart.og --arch arm
+sudo dd if=vmlinux.kpart of=/dev/mmcblk0p2 bs=4M
+sudo add cgpt -i 2 -P 10 -T 5 -S 1 /dev/mmcblk0
+sudo add cgpt -i 4 -P 0 -S 0 /dev/mmcblk0
+sudo sync
+sync
+cd ~
+sudo umount /mnt
+sudo sync
+sync
+sudo reboot
+--------after that if still not work drivers. do the .its fix
+
+Internal Storage Defaults for 16GB eMMC and 2GBRam via 'sudo fdisk -l'
+[mmcblk0]
+p1	8704000		30777295	22073296	10G	MS BDate
+p2	  20480		   53247	32768		16M	Kernel-A
+L-- This is our working Kernel partition. Same with the Debian instruction.
+# Somehow though fails to find our Root Partition even with PARTNROFF=1 -> mmcblk0p3
+# Let's check how it is actually structured sequentially in eMMC Sectors.
+p3	4509696		 8703999	4194304		2G	Root-A
+L---We've been trying put ROOT here.. A partition originally 2G while p1 right there seems to be..
+# Where it should be an is what's instructed in the Debian Installation for another device ref
+# for the installation on this device.
+p4	  53248		   86015	32768		16M	Kernel-B
+p5	 315392		 4509695	4194304		2G	Root-B
+p6	  16448		   16448	1		512B	Kernel-C
+p7	  16449		   16449	1		512B	Root-C
+p8	  86016		  118783	32768		16M	MS Bdata
+p9	  16450		   16450	1		512B	reserved
+p10	  16451		   16451	1		512B	reserved
+p11	     64		   16447	16384		8M	firmware
+p12	 249856		  315391	65536		32M	EFI System
+
+[Actual Secitoning Sequence Regardless of Partition Logical Number]
+p11	     64		   16447	16384		8M	firmware
+p6	  16448		   16448	1		512B	Kernel-C
+p7	  16449		   16449	1		512B	Root-C
+p9	  16450		   16450	1		512B	reserved
+p10	  16451		   16451	1		512B	reserved
+p2	  20480		   53247	32768		16M	Kernel-A
+L-- This is our Kernel
+p4	  53248		   86015	32768		16M	Kernel-B
+p12	 249856		  315391	65536		32M	EFI System
+p5	 315392		 4509695	4194304		2G	Root-B
+p3	4509696		 8703999	4194304		2G	Root-A
+L-- This is where we were putting Root
+p1	8704000		30777295	22073296	10G	MS BDate
+
+Let's check that online version of the above the we found before:
+https://medium.com/swlh/running-arch-linux-on-a-chromebook-11e3f9c4e87c
+
+[Testing Debian Instruction Method]
+https://wiki.debian.org/InstallingDebianOn/Asus/C201#Installing_to_internal_memory_from_SD_card
+# shrink ROOT-A and ROOT-B partitions
+cgpt add -i 5 -b 315392 -s 32 /dev/mmcblk0
+cgpt add -i 3 -b 315424 -s 32 /dev/mmcblk0
+# expand STATE partition
+cgpt add -i 1 -b 315456 -s 30461840 /dev/mmcblk0
+mkfs -t ext4 /dev/mmcblk0p1
+mount -t ext4 /dev/mmcblk0p1 /mnt
+cp -ax / /mnt
+# reconfigure kernel
+sudo nano /mnt/boot/kernel.flags
+console=tty1 init=/sbin/init root=b301 rootdelay=5 rootwait rw noinitrd lsm.module_locking=0
+cd /mnt/boot
+sudo mv vmlinux.kpart vmlinux.kpart.old
+cd ~
+sudo mount --bind /dev /mnt/dev
+sudo mount --bind /sys /mnt/sys
+sudo mount --bind /proc /mnt/proc
+sudo chroot /mnt
+cd /etc
+nano mkinitcpio.conf
+M=(dw_mmc dw_mmc_rochchip sdhci_of_arasan)
+mkinitcpio -P linux-armv7
+exit
+cd /mnt/boot
+sudo futility vbutil_kernel --pack /mnt/boot/vmlinux.kpart --keyblock \
+  /usr/share/vboot/devkeys/kernel.keyblock \
+  --signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk \
+  --config /mnt/boot/kernel.flags --oldblob vmlinux.kpart.old \
+  --vmlinuz /mnt/boot/zImage --bootloader /mnt/boot/initramfs-linux.img --arch arm
+dd if=vmlinux.kpart of=/dev/mmcblk0p2
+cd ~
+sudo umount -R /mnt
+# set mmcblk0p2 to the high priority and successful
+cgpt add -i 2 -P 10 -S 1 /dev/mmcblk0
+# set mmcblk0p4 to low priority so it is not used
+# (I put test kernels here and set it to -P 15 -T 1 -S 0)
+cgpt add -i 4 -P 0 -S 0 /dev/mmcblk0
+sudo sync
+sudo reboot
+
+[Transferring to Internal Storage]
+Take note of your internal storage's partition 1's End Row which is a Sector: mine was 30777295
+sudo cgpt add -i 1 -b `expr 30777295 - 32` -s 32 /dev/mmcblk0
+sudo cgpt add -i 5 -s 32 /dev/mmcblk0
+Take note of your internal storage's partition 5's End Row: mine was 315423
+Take note of your internal storage's partition 1's Start Row: mine was 30777263
+sudo cgpt add -i 3 -b 315424 -s 30461839 -t data /dev/mmcblk0
+sudo mkfs -t ext4 /dev/mmcblk0p3
+mount -t ext4 /dev/mmcblk0p3 /mnt
+sudo cp -ax / /mnt
+https://github.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel.keyblock
+https://github.com/archlinuxarm/PKGBUILDs/raw/refs/heads/master/core/linux-armv7/kernel_data_key.vbprivk
+# reconfigure kernel
+sudo futility vbutil_kernel --verify /boot/vmlinux.kpart -verbose
+L--- just get the default flags, we're only modifying the root= part with either mmcblk0p1 or #PARTUUID or HEXID... Check if we can use '|' like usual OR operator to have all of them at once.
+#Last time I tried HEXID it did something which is blackout. XD
+#Maybe I was using something with a Desktop/GUI Manager already and that crashed..
+#So might want to try without the Desktop Managers later.
+#Thank Goodness I already made a virtual copy of the fresh Live Environment before the pacman-keys.
+sudo nano /mnt/boot/kernel.flag
+console=tty0 init=/sbin/init root=PARTUUID=<your PARTUUID of partition 1 here if it doesn't work use HEXID, Get HEXID from the bootup freeze screen,> rootfstype=ext4 rootwait rw noinitrd
+[]
+cd /mnt/boot
+sudo futility vbutil_kernel --repack /mnt/boot/vmlinux.kpart.new --keyblock \
+  /usr/share/vboot/devkeys/kernel.keyblock \
+  --signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk \
+  --config /mnt/boot/kernel.flags --oldblob vmlinux.kpart \
+  --arch arm
+sudo dd if=vmlinux.kpart.new of=/dev/mmcblk0p2
+cd ~
+umount /mnt
+sudo cgpt add -i 2 -P 10 -S 1 -T 5 /dev/mmcblk0
+sudo cgpt add -i 4 -P 0 -S 0 /dev/mmcblk0
+sudo sync
+sudo reboot
+---------------------------------------------
+sudo mkdir -p /mnt/internal
+sudo mount /dev/mmcblk0p3 /mnt/internal
+sudo mount --bind /dev /mnt/internal/dev
+sudo mount --bind /proc /mnt/internal/proc
+sudo mount --bind /sys /mnt/internal/sys
+sudo chroot /mnt/internal
+systemctl disable systemd-timesyncd.service
+systemctl disable systemd-resolved.service
+systemctl enable debug-shell.service
+nano /etc/mkinitcpio.conf
+MODULES=(dw_mmc dw_mmc_rockchip sdhci_of_arasan)
+mkinitcpio -P
+exit
+sudo umount -R /mnt/internal
+sudo cgpt add -i 2 -P 10 -T 5 -S 1 /dev/mmcblk0
+sudo reboot
+-------
 
 [Once Connected To WiFi Set That WiFi With These To Auto Connect On Boot]
 sudo pacman -S iwd
@@ -103,21 +643,6 @@ sudo systemctl disable --now netctl
 sudo systemctl enable --now iwd.service
 sudo systemctl daemon-reload
 sudo systemctl reset-failed
-
-[ForCleaningRepoListsToPullUpdatesFrom]
-pacman -Syu
-pacman -Scc
-pacman -Syyu
-pacman -Syu
-
-[SlowUpdateScript]
-
-[If There Are "Could Not Remove Errors" From Sudden Shutdowns During Download/Update]
-sudo rm -rf /var/cache/pacman/pkg/download-*
-Then sudo pacman -Scc
-
-[Remove Orphaned/Remnant Packages]
-sudo pacman -Rns $(pacman -Qtdq)
 
 [GUI & DisplayManager]
 pacman -S xorg-server xorg-xinit lxde
@@ -831,3 +1356,26 @@ set nano as default text editor instead of vim or any other traditional text edi
 Upload to GitHub Repo along with the packages that were used here for preservation.
 And the Google Chromebook Restore Media as well.
 
+https://github.com/altreact/archbk/issues/3
+
+Alternate: http://os.archlinuxarm.org/os/ArchLinuxARM-veyron-latest.tar.gz
+
+###### If above doesn't work, let's try the PARTUUID SWAP.
+If Above still doesn't work -> Fresh Install again.. Hoping to clear some probably broken linkages from coming from a path structure of /dev/sda2 to /dev/mmcblk0p3 that's probably causing the freeze.
+
+
+On internal boot initialization says waiting for root device PARTUUID=6cdee83-69de-064c-bbd0-107419308d54/PARTNROFF=1...
+Internal Root PartGUID: DA0FF49B-26A6-A24A-B0AD-C2662F6F03D5
+Copied to Kernel PartGUID: DA0FF49B-26A6-A24A-B0AD-C2662F6F03D6
+
+sudo dd if=/tmp/vmlinux.kpart of=/dev/mmcblk0p2 bs=4M
+sudo sync
+sudo umount /mnt/internal
+sudo reboot
+
+
+Reboot the computer.
+At the splash screen, instead of pressing Ctrl-D to go to ChromeOS, press Ctrl-U to boot to the external drive.
+After logging in as root (password is "root")
+Connect to the Internet via USB Tethering from a Cellphone...
+Initialize the pacman keyring and populate the Arch Linux ARM package signing keys:
