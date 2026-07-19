@@ -68,6 +68,8 @@ To test that it works:
 
 Instead of routing the XFCE4's GUI Power Commands to 'systemctl poweroff' command like I had to try as suggested by the LLM I was using. That in conjunction with a script that calls those commands and needs a lot of permission manipulation to get all set up and ultimately just not work. We make/use a SystemD Service instead to connect the command to a system process that is called when pressing shutdown or any power options from the GUI.
 
+Keep your USB Live Linux Installation ready in-case playing around with the parameters of the '.service' file below. A mistake in the 'WantedBy=', 'Before=', and 'After=' can cause your device to shutdown as soon as trying to load into your system. If that happens just boot the USB OS via the OS Verification boot up screen using 'ctrl+u'. Mount your internal storage partition 2(mmcblk2) to '/mnt' via 'sudo mount /dev/mmcblk2 /mnt' if it returns saying a error about devblock then run 'sudo cgpt repair /dev/mmcblk0' first then try again. Then change directory to your internal storage's system services folder via 'cd /mnt/etc/systemd/system' and fix the file below, and remove the dependencies to it via accessing/changing active directory to the xxxx.target.wants folders and removing it from there with 'rm -f chromebook-hardware-poweroff.service' while inside that folder.
+
 Make the service file:  
 ```bash
 sudo nano /etc/systemd/system/chromebook-hardware-poweroff.service
