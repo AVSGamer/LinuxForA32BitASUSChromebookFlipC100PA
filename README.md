@@ -1,6 +1,11 @@
 # Installing Linux on an Asus Chromebook Flip C100PA
 Documentation of my journey into learning more about Linux and Repurposing a 10 year old almost obsolete hardware by installing and configuring a different operating system for it.
 
+## Before trying anything below
+- Make sure you have a USB Storage or Flash Disk or a couple first. Preferably 2 8GB+. One for the ChromeOS Recovery and another for a Linux OS Live USB.
+- You can find the ChromeOS recovery files @ https://cros.tech/
+- You can use Rufus or BalenaEtcher or whatever USB flasher/burner you like.
+
 ## Distros I've tried
 ### Arch Linux 32Bit for ARM Systems like this device:
 - Current(July 2026) official instruction from Arch Linux Website works(only as USB Mode) only if you change the main instruction set's used 'http://os.archlinuxarm.org/os/ArchLinuxARM-veyron-latest.tar.gz' to 'http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-chromebook-latest.tar.gz'
